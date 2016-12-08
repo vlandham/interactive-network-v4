@@ -27,7 +27,7 @@ function network() {
   var colorScheme = d3.scaleOrdinal(d3.schemeCategory20);
 
   // tooltip for mouseover functionality
-  var tooltip = floatingTooltip('network-tooltip', 240);
+  var tooltip = floatingTooltip('network-tooltip', 220);
 
   // Charge is negative because we want nodes to repel.
   // @v4 Before the charge was a stand-alone attribute
@@ -86,7 +86,7 @@ function network() {
 
     simulation.nodes(newNodes);
 
-    simulation.restart();
+    simulation.alpha(1).restart();
   }
 
   function filterNodes(nodesData) {
@@ -105,14 +105,16 @@ function network() {
       .classed('node', true)
       .attr('cx', function (d) { return d.x; })
       .attr('cy', function (d) { return d.y; })
+      .on('mouseover', highlightNode)
+      .on('mouseout', unhighlightNode);
+
+    nodes.exit().remove();
+
+    nodes = nodes.merge(nodesE)
       .attr('r', function (d) { return d.radius; })
       .style('fill', function (d) { return colorScheme(d.artist); })
       // .style('stroke', function (d) { return strokeFor(d); })
       .style('stroke-width', 1.0);
-
-    nodes.exit().remove();
-
-    nodes = nodes.merge(nodesE);
   }
 
   function renderEdges(edgesData) {
@@ -174,6 +176,23 @@ function network() {
     return this;
   };
 
+  chart.updateData = function (newData) {
+    allData = setupData(newData);
+    render();
+  };
+
+  function highlightNode(d, i) {
+    var content = '<p class="main">' + d.name + '</span></p>';
+    content += '<hr class="tooltip-hr">';
+    content += '<p class="main">' + d.artist + '</span></p>';
+    tooltip.showTooltip(content, d3.event);
+  }
+
+  function unhighlightNode(d, i) {
+    tooltip.hideTooltip();
+  }
+
+
   return chart;
 }
 
@@ -233,14 +252,14 @@ function setupMenu() {
   });
 
   d3.select('#song_select').on('change', function () {
-    var songFile = d3.select(this).val();
+    var songFile = d3.select(this).property('value');
     d3.json('data/' + songFile, function (json) {
       myNetwork.updateData(json);
     });
   });
 
   d3.select('#search').on('keyup', function () {
-    var searchTerm = d3.select(this).val();
+    var searchTerm = d3.select(this).property('value');
     myNetwork.updateSearch(searchTerm);
   });
 }
