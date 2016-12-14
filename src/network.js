@@ -36,10 +36,19 @@ function network() {
     return -Math.pow(d.radius, 2.0) * forceStrength;
   }
 
+  //
+  //
+  //
   function ticked() {
     nodes
       .attr('cx', function (d) { return d.x; })
       .attr('cy', function (d) { return d.y; });
+
+    edges
+      .attr('x1', function (d) { return d.source.x; })
+      .attr('y1', function (d) { return d.source.y; })
+      .attr('x2', function (d) { return d.target.x; })
+      .attr('y2', function (d) { return d.target.y; });
   }
 
   // Here we create a force layout and
@@ -48,7 +57,6 @@ function network() {
   var simulation = d3.forceSimulation()
     .velocityDecay(0.2)
     .force('center', d3.forceCenter(width / 2, height / 2))
-    // .force('y', d3.forceY().strength(forceStrength).y(center.y))
     .force('charge', d3.forceManyBody().strength(charge))
     .on('tick', ticked);
 
@@ -68,33 +76,79 @@ function network() {
       .attr('height', height);
 
     svg.append('g')
-      .attr('class', 'nodes');
+      .attr('class', 'edges');
 
     svg.append('g')
-      .attr('class', 'edges');
+      .attr('class', 'nodes');
 
     render();
   };
 
+  //
+  //
+  //
   function render() {
     // filter data to show based on current filter settings.
     var newNodes = filterNodes(allData.nodes);
-    var newEdges = filterEdges(allData.edges, newNodes);
+    var newEdges = filterEdges(allData.links, newNodes);
+
+    simulation.nodes(newNodes);
+
+    if (layout === 'force') {
+      setupNetworkLayout(newEdges);
+    } else {
+      setupRadialLayout();
+    }
 
     renderNodes(newNodes);
     renderEdges(newEdges);
 
-    simulation.nodes(newNodes);
 
     simulation.alpha(1).restart();
   }
 
+  function setupNetworkLayout(edgesData) {
+    var linkForce = d3.forceLink()
+      // .id(function (d) { return d.id; })
+      .distance(40)
+      .links(edgesData);
+
+    simulation.force('links', linkForce);
+    forceStrength = 0.1;
+    simulation.force('charge', d3.forceManyBody().strength(charge));
+  }
+
+  function setupRadialLayout() {
+    simulation.force('links', null);
+    forceStrength = 0.03;
+    simulation.force('charge', d3.forceManyBody().strength(charge));
+  }
+
   function filterNodes(nodesData) {
-    return nodesData;
+    var newNodesData = nodesData;
+    if (filter === 'popular' || filter === 'obscure') {
+      var playcounts = nodesData.map(function (d) { return d.playcount; });
+      playcounts = playcounts.sort(d3.ascending);
+      var cutoff = d3.quantile(playcounts, 0.5);
+      newNodesData = nodesData.filter(function (d) {
+        if (filter === 'popular') {
+          return d.playcount > cutoff;
+        }
+        return d.playcount <= cutoff;
+      });
+    }
+
+    return newNodesData;
   }
 
   function filterEdges(edgesData, nodesData) {
-    return edgesData;
+    var nodesMap = d3.map(nodesData, function (d) { return d.id; });
+      console.log(edgesData)
+    var newEdgesData = edgesData.filter(function (d) {
+      return nodesMap.get(d.source.id) && nodesMap.get(d.target.id);
+    });
+
+    return newEdgesData;
   }
 
   function renderNodes(nodesData) {
@@ -118,7 +172,17 @@ function network() {
   }
 
   function renderEdges(edgesData) {
+    edges = svg.select('.edges').selectAll('.edge')
+      .data(edgesData, function (d) { return d.id; });
 
+    var edgesE = edges.enter().append('line')
+      .classed('edge', true)
+      .attr('stroke', '#ddd')
+      .attr('stroke-opacity', 0.8)
+
+    edges.exit().remove();
+
+    edges = edges.merge(edgesE);
   }
 
   function setupData(data) {
@@ -130,45 +194,36 @@ function network() {
       .domain(countExtent);
 
     data.nodes.forEach(function (n) {
-      // set initial x/y to values within the width/height
-      //  of the visualization
-      // n.x = randomnumber = Math.floor(Math.random()*width)
-      // n.y = randomnumber=Math.floor(Math.random()*height)
       // add radius to the node so we can use it later
       n.radius = radiusScale(n.playcount);
     });
 
-    // id's -> node objects
-    var nodesMap = mapNodes(data.nodes);
+    var nodesMap = d3.map(data.nodes, function (d) { return d.id; });
 
     // switch links to point to node objects instead of id's
     data.links.forEach(function (l) {
       l.source = nodesMap.get(l.source);
       l.target = nodesMap.get(l.target);
+      l.id = l.source.id + '_' + l.target.id;
 
       // linkedByIndex is used for link sorting
-      var edgeId = l.source.id + ',' + l.target.id;
-      linkedByIndex[edgeId] = 1;
+      linkedByIndex[l.id] = 1;
     });
 
     return data;
   }
 
-  // Helper function to map node id's to node objects.
-  // Returns d3.map of ids -> nodes
-  function mapNodes(nodesData) {
-    var nodesMap = d3.map();
-    nodesData.forEach(function (n) {
-      nodesMap.set(n.id, n);
-    });
-    return nodesMap;
-  }
 
   chart.updateLayout = function (newLayout) {
+    simulation.stop();
+    layout = newLayout;
+    render();
     return this;
   };
 
   chart.updateFilter = function (newFilter) {
+    filter = newFilter;
+    render();
     return this;
   };
 
@@ -179,6 +234,24 @@ function network() {
   chart.updateData = function (newData) {
     allData = setupData(newData);
     render();
+  };
+
+  chart.updateSearch = function (searchTerm) {
+    var searchRegEx = new RegExp(searchTerm.toLowerCase());
+    nodes.each(function (d) {
+      var element = d3.select(this);
+      var match = d.name.toLowerCase().search(searchRegEx);
+      if (searchTerm.length > 0 && match >= 0) {
+        element.style('fill', '#F38630')
+          .style('stroke-width', 2.0)
+          .style('stroke', '#555');
+        d.searched = true;
+      } else {
+        d.searched = false;
+        element.style('fill', function (e) { return colorScheme(e.artist); })
+          .style('stroke-width', 1.0);
+      }
+    });
   };
 
   function highlightNode(d, i) {
