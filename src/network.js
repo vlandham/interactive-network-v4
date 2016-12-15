@@ -13,15 +13,13 @@ function network() {
   var filter = 'all';
   var sort = 'songs';
 
-  // @v4 strength to apply to the position forces
-  var forceStrength = 0.03;
-
   //
   var svg = null;
   var nodes = null;
   var edges = null;
   var allData = {};
   var linkedByIndex = {};
+  var showEdges = true;
 
   //
   var colorScheme = d3.scaleOrdinal(d3.schemeCategory20);
@@ -32,23 +30,39 @@ function network() {
   // Charge is negative because we want nodes to repel.
   // @v4 Before the charge was a stand-alone attribute
   //  of the force layout. Now we can use it as a separate force!
+  /*
+  *
+  */
   function charge(d) {
-    return -Math.pow(d.radius, 2.0) * forceStrength;
+    return -Math.pow(d.radius, 2.0) * 0.04;
   }
 
-  //
-  //
-  //
+  /*
+  *
+  */
   function ticked() {
     nodes
       .attr('cx', function (d) { return d.x; })
       .attr('cy', function (d) { return d.y; });
 
-    edges
-      .attr('x1', function (d) { return d.source.x; })
-      .attr('y1', function (d) { return d.source.y; })
-      .attr('x2', function (d) { return d.target.x; })
-      .attr('y2', function (d) { return d.target.y; });
+    if (showEdges) {
+      edges
+        .attr('x1', function (d) { return d.source.x; })
+        .attr('y1', function (d) { return d.source.y; })
+        .attr('x2', function (d) { return d.target.x; })
+        .attr('y2', function (d) { return d.target.y; });
+    } else {
+      edges
+        .attr('x1', 0)
+        .attr('y1', 0)
+        .attr('x2', 0)
+        .attr('y2', 0);
+    }
+  }
+
+  function ended() {
+    showEdges = true;
+    ticked();
   }
 
   // Here we create a force layout and
@@ -56,10 +70,12 @@ function network() {
   //  add forces to it.
   var simulation = d3.forceSimulation()
     .velocityDecay(0.2)
-    .force('center', d3.forceCenter(width / 2, height / 2))
-    .force('charge', d3.forceManyBody().strength(charge))
-    .on('tick', ticked);
+    .alphaMin(0.1)
+    .on('tick', ticked)
+    .on('end', ended);
 
+
+  //
   simulation.stop();
 
   /*
@@ -84,46 +100,78 @@ function network() {
     render();
   };
 
-  //
-  //
-  //
+  /*
+  *
+  */
   function render() {
     // filter data to show based on current filter settings.
     var newNodes = filterNodes(allData.nodes);
     var newEdges = filterEdges(allData.links, newNodes);
 
     simulation.nodes(newNodes);
+    var artists = sortArtists(newNodes, newEdges);
+
 
     if (layout === 'force') {
       setupNetworkLayout(newEdges);
     } else {
-      setupRadialLayout();
+      setupRadialLayout(artists);
     }
 
     renderNodes(newNodes);
     renderEdges(newEdges);
 
-
+    //
     simulation.alpha(1).restart();
   }
 
+  /*
+  *
+  */
   function setupNetworkLayout(edgesData) {
     var linkForce = d3.forceLink()
-      // .id(function (d) { return d.id; })
-      .distance(40)
+      .distance(50)
+      .strength(1)
       .links(edgesData);
 
     simulation.force('links', linkForce);
-    forceStrength = 0.1;
-    simulation.force('charge', d3.forceManyBody().strength(charge));
+    simulation.force('center', d3.forceCenter(width / 2, (height / 2) - 160));
+
+    simulation.force('charge', d3.forceManyBody());
+    simulation.force('x', null);
+    simulation.force('y', null);
   }
 
-  function setupRadialLayout() {
+  /*
+  *
+  */
+  function setupRadialLayout(artists) {
+    showEdges = false;
+    simulation.force('center', null);
+    var groupCenters = radialLayout()
+      .center({ x: width / 2, y: (height / 2) })
+      .radius(200)
+      .increment(18)
+      .keys(artists);
+
     simulation.force('links', null);
-    forceStrength = 0.03;
     simulation.force('charge', d3.forceManyBody().strength(charge));
+
+    var xForce = d3.forceX()
+      .strength(0.02)
+      .x(function (d) { return groupCenters(d.artist).x; });
+
+    var yForce = d3.forceY()
+      .strength(0.02)
+      .y(function (d) { return groupCenters(d.artist).y; });
+
+    simulation.force('x', xForce);
+    simulation.force('y', yForce);
   }
 
+  /*
+  *
+  */
   function filterNodes(nodesData) {
     var newNodesData = nodesData;
     if (filter === 'popular' || filter === 'obscure') {
@@ -142,8 +190,11 @@ function network() {
   }
 
   function filterEdges(edgesData, nodesData) {
+    if (!showEdges) {
+      return [];
+    }
     var nodesMap = d3.map(nodesData, function (d) { return d.id; });
-      console.log(edgesData)
+
     var newEdgesData = edgesData.filter(function (d) {
       return nodesMap.get(d.source.id) && nodesMap.get(d.target.id);
     });
@@ -167,6 +218,7 @@ function network() {
     nodes = nodes.merge(nodesE)
       .attr('r', function (d) { return d.radius; })
       .style('fill', function (d) { return colorScheme(d.artist); })
+      .style('stroke', 'white')
       // .style('stroke', function (d) { return strokeFor(d); })
       .style('stroke-width', 1.0);
   }
@@ -178,7 +230,7 @@ function network() {
     var edgesE = edges.enter().append('line')
       .classed('edge', true)
       .attr('stroke', '#ddd')
-      .attr('stroke-opacity', 0.8)
+      .attr('stroke-opacity', 0.8);
 
     edges.exit().remove();
 
@@ -213,7 +265,40 @@ function network() {
     return data;
   }
 
+  function sortArtists(nodesData, edgesData) {
+    var artists = [];
+    var counts = {};
+    if (sort === 'links') {
+      edgesData.forEach(function (e) {
+        counts[e.source.artist] = counts[e.source.artist] ? counts[e.source.artist] : 0;
+        counts[e.source.artist] += 1;
+        counts[e.target.artist] = counts[e.target.artist] ? counts[e.target.artist] : 0;
+        counts[e.source.artist] += 1;
 
+        nodesData.forEach(function (n) {
+          counts[n.artist] = counts[n.artist] ? counts[n.artist] : 0;
+        });
+
+        artists = d3.entries(counts).sort(function (a, b) { return b.value - a.value; });
+        artists = artists.map(function (a) { return a.key; });
+      });
+    } else {
+      nodesData.forEach(function (n) {
+        counts[n.artist] = counts[n.artist] ? counts[n.artist] : 0;
+        counts[n.artist] += 1;
+        artists = d3.entries(counts).sort(function (a, b) { return b.value - a.value; });
+        artists = artists.map(function (a) { return a.key; });
+      });
+    }
+
+
+    return artists;
+  }
+
+
+  /*
+  *
+  */
   chart.updateLayout = function (newLayout) {
     simulation.stop();
     layout = newLayout;
@@ -221,21 +306,35 @@ function network() {
     return this;
   };
 
+  /*
+  *
+  */
   chart.updateFilter = function (newFilter) {
     filter = newFilter;
     render();
     return this;
   };
 
+  /*
+  *
+  */
   chart.updateSort = function (newSort) {
+    sort = newSort;
+    render();
     return this;
   };
 
+  /*
+  *
+  */
   chart.updateData = function (newData) {
     allData = setupData(newData);
     render();
   };
 
+  /*
+  *
+  */
   chart.updateSearch = function (searchTerm) {
     var searchRegEx = new RegExp(searchTerm.toLowerCase());
     nodes.each(function (d) {
@@ -254,17 +353,42 @@ function network() {
     });
   };
 
+  /*
+  *
+  */
   function highlightNode(d, i) {
     var content = '<p class="main">' + d.name + '</span></p>';
     content += '<hr class="tooltip-hr">';
     content += '<p class="main">' + d.artist + '</span></p>';
     tooltip.showTooltip(content, d3.event);
+
+    if (showEdges) {
+      edges
+        .attr('stroke', function (l) {
+          if (l.source.id === d.id || l.target.id === d.id) {
+            return '#555';
+          }
+          return '#ddd';
+        })
+        .attr('stroke-opacity', function (l) {
+          if (l.source.id === d.id || l.target.id === d.id) {
+            return 1.0;
+          }
+          return 0.5;
+        });
+    }
   }
 
+  /*
+  *
+  */
   function unhighlightNode(d, i) {
     tooltip.hideTooltip();
-  }
 
+    edges
+      .attr('stroke', '#ddd')
+      .attr('stroke-opacity', 0.8);
+  }
 
   return chart;
 }
