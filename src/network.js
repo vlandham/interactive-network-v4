@@ -28,7 +28,7 @@ function network() {
 
   // tooltip for mouseover functionality
   // implemented in tooltip.js
-  var tooltip = floatingTooltip('network-tooltip', 220);
+  var tooltip = floatingTooltip('network-tooltip', 200);
 
   /*
   * Charge function used to set the strength of
@@ -248,13 +248,9 @@ function network() {
 
   /*
   * Filter down edges based on what nodes are
-  * currently present in the network. If
-  * not currently showing edges, return empty array.
+  * currently present in the network.
   */
   function filterEdges(edgesData, nodesData) {
-    if (!showEdges) {
-      return [];
-    }
     var nodesMap = d3.map(nodesData, function (d) { return d.id; });
 
     var newEdgesData = edgesData.filter(function (d) {
@@ -299,8 +295,8 @@ function network() {
 
     var edgesE = edges.enter().append('line')
       .classed('edge', true)
-      .attr('stroke', '#ddd')
-      .attr('stroke-opacity', 0.8);
+      .style('stroke', '#ddd')
+      .style('stroke-opacity', 0.8);
 
     edges.exit().remove();
 
@@ -443,7 +439,7 @@ function network() {
   * Callback for mouseover event.
   * Highlights a node and connected edges.
   */
-  function highlightNode(d, i) {
+  function highlightNode(d) {
     var content = '<p class="main">' + d.name + '</span></p>';
     content += '<hr class="tooltip-hr">';
     content += '<p class="main">' + d.artist + '</span></p>';
@@ -451,31 +447,61 @@ function network() {
 
     if (showEdges) {
       edges
-        .attr('stroke', function (l) {
+        .style('stroke', function (l) {
           if (l.source.id === d.id || l.target.id === d.id) {
             return '#555';
           }
           return '#ddd';
         })
-        .attr('stroke-opacity', function (l) {
+        .style('stroke-opacity', function (l) {
           if (l.source.id === d.id || l.target.id === d.id) {
             return 1.0;
           }
           return 0.5;
         });
+      // higlight connected nodes
+      nodes
+        .style('stroke', function (n) {
+          if (d.id === n.id || n.searched || neighboring(d, n)) {
+            return '#555';
+          }
+          return 'white';
+        })
+        .style('stroke-width', function (n) {
+          if (d.id === n.id || n.searched || neighboring(d, n)) {
+            return 2.0;
+          }
+          return 1.0;
+        });
     }
+  }
+
+  /*
+  * Helper function returns not-false
+  * if a and b are connected by an edge.
+  * Uses linkedByIndex object.
+  */
+  function neighboring(a, b) {
+    return linkedByIndex[a.id + '_' + b.id] ||
+      linkedByIndex[b.id + '_' + a.id];
   }
 
   /*
   * Callback for mouseout event.
   * Unhighlights node.
   */
-  function unhighlightNode(d, i) {
+  function unhighlightNode() {
     tooltip.hideTooltip();
 
+    // reset edges
     edges
-      .attr('stroke', '#ddd')
-      .attr('stroke-opacity', 0.8);
+      .style('stroke', '#ddd')
+      .style('stroke-opacity', 0.8);
+
+    // reset nodes
+    nodes
+      .style('stroke', 'white')
+      .style('stroke-width', 1.0);
   }
 
   return chart;
