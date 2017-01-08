@@ -22,6 +22,7 @@ function network() {
   var allData = {};
   var linkedByIndex = {};
   var showEdges = true;
+  var chargePower = 0.04;
 
   // colors for nodes
   var colorScheme = d3.scaleOrdinal(d3.schemeCategory20);
@@ -39,7 +40,7 @@ function network() {
   *  Now, it is used with a separate force.
   */
   function charge(d) {
-    return -Math.pow(d.radius, 2.0) * 0.04;
+    return -Math.pow(d.radius, 2.0) * chargePower;
   }
 
   /*
@@ -174,7 +175,9 @@ function network() {
     simulation.force('center', d3.forceCenter(width / 2, (height / 2) - 160));
 
     // setup many body force to have nodes repel one another
-    simulation.force('charge', d3.forceManyBody());
+    // increasing the chargePower here to make nodes stand about
+    chargePower = 1.0;
+    simulation.force('charge', d3.forceManyBody().strength(charge));
     // kill x and y forces used in radial layout
     simulation.force('x', null);
     simulation.force('y', null);
@@ -198,6 +201,7 @@ function network() {
 
     // use many-body force to reduce node overlap
     // in node clusters.
+    chargePower = 0.04;
     simulation.force('charge', d3.forceManyBody().strength(charge));
 
     // radialLayout is implemented in radial_layout.js
