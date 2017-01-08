@@ -1,4 +1,6 @@
-
+/*
+ * Radial layout helper function.
+ */
 function radialLayout() {
   var values = d3.map();
   var increment = 20;
@@ -49,6 +51,7 @@ function radialLayout() {
       return place(k);
     });
   };
+
   placement.keys = function (_) {
     if (!arguments.length) {
       return d3.keys(values);
@@ -56,6 +59,7 @@ function radialLayout() {
     setKeys(_);
     return placement;
   };
+
   placement.center = function (_) {
     if (!arguments.length) {
       return center;
